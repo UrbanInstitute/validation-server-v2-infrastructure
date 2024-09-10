@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Cloud infrastructure for the safe data tech validation server
+
+Parameters:
+  BackendMasterUserPassword:
+    Type: String
+    Description: Admin password for backend database
+  DBPrivateSubnet:
+    Type: String
+    Description: VPC Subnet for RDS instance
+  DBSecurityGroup:
+    Type: String
+  EC2PublicSubnet:
+    Type: String
+  EC2SecurityGroup:
+    Type: String
+  TagName:
+    Type: String
+  TagProjectName:
+    Type: String
+  TagProjectCode:
+    Type: String
+  TagTechTeam:
+    Type: String
+  TagCenter:
+    Type: String
+  TagRequestedBy:
+    Type: String
+  TagCreatedBy:
+    Type: String
+  TagPlatform:
+    Type: String
+    Description: Either Linux or Windows
+
+
+Resources:
+  KmsKey:
+    Type: AWS::KMS::Key 
+    Properties:
+      Description: KMS Key for encryption
+      Enabled: true
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS:
+              !Join
+              - ''
+              - - 'arn:aws:iam::'
+                - Ref: AWS::AccountId
+                - :root
+          Action: kms:*
+          Resource: '*'
+        - Sid: Enable Lambda Permissions
+          Effect: Allow
+          Principal:
+            Service:
+              - "lambda.amazonaws.com"
+            AWS:
+              !Join
+              - ''
+              - - 'arn:aws:iam::'
+                - Ref: AWS::AccountId
+                - ':role/sdt-validation-server-engine-role-stg'
+          Action: 
+            - kms:Decrypt
+          Resource: "*"
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS:
+              !Join
+              - ''
+              - - 'arn:aws:iam::'
+                - Ref: AWS::AccountId
+                - ':user/sdt-validation-server-lambda-user'
+          Action: 
+            - kms:Decrypt
+          Resource: '*'
+
+      Tags: 
+        - Key: "Name"
+          Value: !Sub '${TagName}'
+        - Key: "Project-Name"
+          Value: !Sub '${TagProjectName}'
+        - Key: "Project-Code"
+          Value: !Sub '${TagProjectCode}'
+        - Key: "Tech-Team"
+          Value: !Sub '${TagTechTeam}'
+        - Key: "Center"
+          Value: !Sub '${TagCenter}'
+        - Key: "Requested-By"
+          Value: !Sub '${TagRequestedBy}'
+        - Key: "Created-By"
+          Value: !Sub '${TagCreatedBy}'
+        - Key: "Platform"
+          Value: !Sub '${TagPlatform}'
+
+  
+  S3KeyAlias:
+    Type: AWS::KMS::Alias 
+    Properties:
+      AliasName: alias/sdt-validation-server
+      TargetKeyId: !Ref KmsKey
+
+  
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: "100"
+      BackupRetentionPeriod: 0
+      CopyTagsToSnapshot: true
+      DBInstanceIdentifier: "sdt-validation-server"
+      DBInstanceClass: "db.t4g.micro"
+      DBSubnetGroupName: !Sub '${DBPrivateSubnet}'
+      DeletionProtection: false
+      EnablePerformanceInsights: false
+      Engine: "mysql"
+      EngineVersion: "8.0.31"
+      KmsKeyId: !Ref KmsKey
+      MasterUsername: "root"
+      MasterUserPassword: !Sub '${BackendMasterUserPassword}'
+      MonitoringInterval: 0
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      StorageType: "gp2"
+      VPCSecurityGroups: 
+        - !Sub '${DBSecurityGroup}'
+      Tags: 
+        - Key: "Name"
+          Value: !Sub '${TagName}'
+        - Key: "Project-Name"
+          Value: !Sub '${TagProjectName}'
+        - Key: "Project-Code"
+          Value: !Sub '${TagProjectCode}'
+        - Key: "Tech-Team"
+          Value: !Sub '${TagTechTeam}'
+        - Key: "Center"
+          Value: !Sub '${TagCenter}'
+        - Key: "Requested-By"
+          Value: !Sub '${TagRequestedBy}'
+        - Key: "Created-By"
+          Value: !Sub '${TagCreatedBy}'
+        - Key: "Platform"
+          Value: !Sub '${TagPlatform}'
+
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      AdditionalInfo: "EC2 instance for web application"
+      AvailabilityZone: "us-east-1a"
+      EbsOptimized: true
+      ImageId: "ami-044af7680fb646471"
+      InstanceType: "t3.small"
+      KeyName: "InformationTechnology"
+      SecurityGroupIds: 
+        - !Sub '${EC2SecurityGroup}'
+      SubnetId: !Sub '${EC2PublicSubnet}'
+      Tags: 
+        - Key: "Name"
+          Value: !Sub '${TagName}'
+        - Key: "Project-Name"
+          Value: !Sub '${TagProjectName}'
+        - Key: "Project-Code"
+          Value: !Sub '${TagProjectCode}'
+        - Key: "Tech-Team"
+          Value: !Sub '${TagTechTeam}'
+        - Key: "Center"
+          Value: !Sub '${TagCenter}'
+        - Key: "Requested-By"
+          Value: !Sub '${TagRequestedBy}'
+        - Key: "Created-By"
+          Value: !Sub '${TagCreatedBy}'
+        - Key: "Platform"
+          Value: !Sub '${TagPlatform}'
+  
+
+  LambdaUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: sdt-validation-server-lambda-user
+      Policies:
+      - PolicyName: sdt-validation-server-trigger-lambda
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: "arn:aws:lambda:us-east-1::function:sdt-validation-server-*"
